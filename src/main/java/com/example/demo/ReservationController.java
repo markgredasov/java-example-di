@@ -33,7 +33,12 @@ public class ReservationController {
           @RequestBody Reservation reservationToCreate
   ) {
     log.info("create reservation called");
-
     return reservationService.createReservation(reservationToCreate);
+  }
+
+  @DeleteMapping("/reservations/{id}")
+  public Reservation deleteReservationByID(@PathVariable("id") Long id) {
+    log.info("delete reservation by id called");
+    return reservationService.deleteReservationByID(id);
   }
 }

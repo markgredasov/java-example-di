@@ -50,4 +50,15 @@ public class ReservationService {
 
     return newReservation;
   }
+
+  public Reservation deleteReservationByID(Long id) {
+    if (!reservationMap.containsKey(id)) {
+      throw new NoSuchElementException("reservation with id = " + id + " was not found");
+    }
+
+    var deletedReservation = reservationMap.get(id);
+    reservationMap.remove(id);
+
+    return deletedReservation;
+  }
 }
