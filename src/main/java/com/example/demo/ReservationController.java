@@ -29,9 +29,7 @@ public class ReservationController {
   }
 
   @PostMapping("/reservations")
-  public Reservation createReservation(
-          @RequestBody Reservation reservationToCreate
-  ) {
+  public Reservation createReservation(@RequestBody Reservation reservationToCreate) {
     log.info("create reservation called");
     return reservationService.createReservation(reservationToCreate);
   }

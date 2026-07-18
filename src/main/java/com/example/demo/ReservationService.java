@@ -43,7 +43,7 @@ public class ReservationService {
             reservationToCreate.roomID(),
             reservationToCreate.startDate(),
             reservationToCreate.endDate(),
-            ReservationStatus.PENDING
+            ReservationStatus.CREATED
     );
 
     reservationMap.put(newReservation.id(), newReservation);
