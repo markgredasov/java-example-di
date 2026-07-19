@@ -8,6 +8,8 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 @RestController
@@ -15,10 +17,11 @@ public class ReservationController {
 
   private final ReservationService reservationService;
   private static final Logger log = LoggerFactory.getLogger(ReservationController.class);
+  private static final int MAX_NUMBER_OF_RETRIES = 5;
+  private static final long INITIAL_BACKOFF_MS = 1000;
 
   @Autowired
   private RestTemplate restTemplate;
-
 
   public ReservationController(ReservationService reservationService) {
     this.reservationService = reservationService;
@@ -44,7 +47,7 @@ public class ReservationController {
 
     String traceID = getTraceIdFromRequest(request);
 
-    sendToInternalService(createdReservation, traceID);
+    sendToLoggingService(createdReservation, traceID);
 
     return createdReservation;
   }
@@ -60,26 +63,48 @@ public class ReservationController {
     return traceID == null ? "" : traceID;
   }
 
-  private void sendToInternalService(Reservation reservation, String traceID) {
-    try {
-      String internalServiceURL = getInternalServiceURL();
+  private void sendToLoggingService(Reservation reservation, String traceID) {
+    Instant attemptStartTime = Instant.now();
 
-      var headers = getHttpHeaders(traceID);
+    for (int attempt = 0; attempt < MAX_NUMBER_OF_RETRIES; attempt++) {
+      try {
+        String internalServiceURL = getLoggingServiceURL();
 
-      HttpEntity<Reservation> request = new HttpEntity<>(reservation, headers);
-      ResponseEntity<String> response = restTemplate.exchange(internalServiceURL, HttpMethod.POST, request, String.class);
+        var headers = setHttpHeaders(traceID);
 
-      LogSendToInternalServiceResult(response);
-    } catch (Exception e) {
-      log.error("failed to send request to internal service", e);
+        HttpEntity<Reservation> request = new HttpEntity<>(reservation, headers);
+        ResponseEntity<String> response = restTemplate.exchange(internalServiceURL, HttpMethod.POST, request, String.class);
+
+        Duration attemptDuration = Duration.between(attemptStartTime, Instant.now());
+
+        logSendToLoggingServiceResult(response, attemptDuration);
+
+        return;
+
+      } catch (Exception e) {
+        Duration attemptDuration = Duration.between(attemptStartTime, Instant.now());
+        log.warn("attempt {}: failed to send request to logging service after {} ms: {}", attempt, attemptDuration, e.getMessage());
+
+        if (attempt < MAX_NUMBER_OF_RETRIES - 1) {
+          long currentBackoff = calculateBackoffInMs(attempt);
+          try {
+            Thread.sleep(currentBackoff);
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.error("retry was interrupted: {}", ex.getMessage());
+            break;
+          }
+        }
+        log.error("failed to send request to internal service", e);
+      }
     }
   }
 
-  private String getInternalServiceURL() {
+  private String getLoggingServiceURL() {
     return "http://localhost:8081/internal/log";
   }
 
-  private HttpHeaders getHttpHeaders(String traceID) {
+  private HttpHeaders setHttpHeaders(String traceID) {
     final String TRACE_ID_HEADER = "X-Trace-ID";
 
     HttpHeaders headers = new HttpHeaders();
@@ -89,11 +114,15 @@ public class ReservationController {
     return headers;
   }
 
-  private void LogSendToInternalServiceResult(ResponseEntity<String> response) {
+  private void logSendToLoggingServiceResult(ResponseEntity<String> response, Duration attemptDuration) {
     if (response.getStatusCode().is2xxSuccessful()) {
-      log.info("reservation sent to internal service successfully | response: {}", response.getBody());
+      log.info("reservation sent to internal service successfully after {} ms: response: {}", attemptDuration, response.getBody());
     } else {
       log.warn("internal service returned: {}", response.getStatusCode());
     }
+  }
+
+  private long calculateBackoffInMs(int i) {
+    return INITIAL_BACKOFF_MS * (long) Math.pow(2, i);
   }
 }
