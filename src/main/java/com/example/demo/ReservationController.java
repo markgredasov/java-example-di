@@ -1,5 +1,7 @@
 package com.example.demo;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,7 @@ import java.util.List;
 public class ReservationController {
 
   private final ReservationService reservationService;
+  private final KafkaProducer kafkaProducer;
   private static final Logger log = LoggerFactory.getLogger(ReservationController.class);
   private static final int MAX_NUMBER_OF_RETRIES = 5;
   private static final long INITIAL_BACKOFF_MS = 1000;
@@ -23,14 +26,27 @@ public class ReservationController {
   @Autowired
   private RestTemplate restTemplate;
 
-  public ReservationController(ReservationService reservationService) {
+  public ReservationController(ReservationService reservationService, KafkaProducer kafkaProducer) {
     this.reservationService = reservationService;
+    this.kafkaProducer = kafkaProducer;
   }
 
   @GetMapping("/reservations/{id}")
-  public Reservation getReservationByID(@PathVariable("id") Long id) {
+  public Reservation getReservationByID(@PathVariable("id") Long id) throws JsonProcessingException {
     log.info("get reservation by id called");
-    return reservationService.getReservationByID(id);
+
+    Reservation reservation = reservationService.getReservationByID(id);
+
+    kafkaProducer.sendMessage(reservation);
+    return reservation;
+  }
+
+  @GetMapping("/reservations/invalid")
+  public Reservation getReservationInvalidMessage() {
+    log.info("get reservation invalid message called");
+
+    kafkaProducer.sendMessage("invalid");
+    return null;
   }
 
   @GetMapping("/reservations")
