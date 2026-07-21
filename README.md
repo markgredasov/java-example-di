@@ -1,1 +1,1 @@
-# jaca-example-di
+# java-example-di
